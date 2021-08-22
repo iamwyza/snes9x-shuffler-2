@@ -24,11 +24,12 @@ STATES_FOLDER = GAMES_FOLDER .. '/.savestates'
 STATES_BACKUPS = 3
 DEFAULT_CMD_OUTPUT = 'shuffler-src/.cmd-output.txt'
 
-MIN_BIZHAWK_VERSION = "0"
-RECOMMENDED_LUA_CORE = "LuaInterface"
+MIN_SNES9X_VERSION = "1.61"
 MAX_INTEGER = 99999999
 PRINT_DEBUG = false
 PRINT_DEBUG_FRAME = false -- WARNING!!! VERY SPAMMY
+
+hideMessages(true);
 
 -- check if folder exists
 function path_exists(p)
@@ -193,13 +194,13 @@ end
 function get_savestate_file(game)
 	game = game or config.current_game
 	if game == nil then error('no game specified for savestate file') end
-	return 1
-	--return string.format("%s/%s.state", STATES_FOLDER, game)
+	return string.format("%s/%s.000", STATES_FOLDER, game:gsub('.sfc',''))
 end
 
 function save_current_game()
 	debug('save_current_game')
 	local function overwrite(a, b)
+		debug(string.format("rename %s to %s", a, b))
 		os.remove(b)
 		os.rename(a, b)
 	end
@@ -223,15 +224,11 @@ function file_exists(f)
 	return true
 end
 
--- we don't load the savestate here because (for some unbelievably f***ed up reason),
--- client.openrom() causes the whole script to reload, forcing us to use a convoluted
--- method to determine if this is the initial execution of the script, or a reload
--- caused by openrom(). in any case, loading the savestate here seems to run into
--- a race condition, so we load the savestate at the beginning of the reloaded script
 function load_game(g)
 	local filename = GAMES_FOLDER .. '/' .. g
 	if not file_exists(filename) then return false end
 	emu.loadrom(filename)
+	savestate.load(0)
 	return true
 end
 
@@ -320,7 +317,7 @@ function swap_game(next_game)
 
 	-- load the new game 
 	load_game(config.current_game)
-	savestate.load(0)
+	
 
 	-- update swap counter for this game
 	local new_swaps = (config.game_swaps[config.current_game] or 0) + 1
@@ -376,7 +373,7 @@ function checkversion(reqversion)
 	if reqversion == nil then return true end
 
 	local curr, reqd = {}, {}
-	for x in string.gmatch("0", "%d+") do
+	for x in string.gmatch(getVersion(), "%d+") do
 		table.insert(curr, tonumber(x))
 	end
 	for x in string.gmatch(reqversion, "%d+") do
@@ -391,14 +388,6 @@ function checkversion(reqversion)
 	end
 	return true
 end
-
--- local function check_lua_core()
--- 	if client.get_lua_engine() ~= RECOMMENDED_LUA_CORE then
--- 		print(string.format("\n[!] It is recommended to use the %s core (currently using %s)\n" ..
--- 			"Change the Lua core in the Config > Customize > Advanced menu and restart BizHawk",
--- 			RECOMMENDED_LUA_CORE, client.get_lua_engine()))
--- 	end
--- end
 
 -- this is going to be an APPROXIMATION and is not a substitute for an actual
 -- timer. games do not run at a consistent or exact 60 fps, so this method is
@@ -455,6 +444,9 @@ function cwd()
 	return resp:match( "^%s*(.+)%s*$" )
 end
 
+-- Unused atm
+--[[
+
 function complete_setup()
 	if config.plugins ~= nil then
 		for pmodpath,pdata in pairs(config.plugins) do
@@ -501,52 +493,31 @@ function complete_setup()
 		load_game(config.current_game)
 	else swap_game() end
 end
+--]]
 
---check_lua_core()
 
 -- load primary configuration
 load_config('shuffler-src/config.lua')
 
--- if emu.getsystemid() ~= "NULL" then
-if true then
-	print('script init')
-	-- THIS CODE RUNS EVERY TIME THE SCRIPT RESTARTS
-	-- which is specifically after a call to client.openrom()
-
-	-- I will try to limit the number of comments I write solely to complain about
-	-- this design decision, but I make no promises.
-
-	-- load plugin configuration
-	if config.plugins ~= nil then
-		for pmodpath,pdata in pairs(config.plugins) do
-			local pmodule = require(PLUGINS_FOLDER .. '.' .. pmodpath)
-			pmodule._module = pmodpath
-			if pmodule ~= nil then table.insert(plugins, pmodule) end
-		end
+-- load plugin configuration
+if config.plugins ~= nil then
+	for pmodpath,pdata in pairs(config.plugins) do
+		local pmodule = require(PLUGINS_FOLDER .. '.' .. pmodpath)
+		pmodule._module = pmodpath
+		if pmodule ~= nil then table.insert(plugins, pmodule) end
 	end
+end
 
-	--local state = get_savestate_file()
-	--if file_exists(state) then savestate.load(state) end
-
-	
-else
-	-- THIS CODE RUNS ONLY ON THE INITIAL SCRIPT SETUP
-	--client.displaymessages(false)
-	if checkversion(MIN_BIZHAWK_VERSION) then
-		local setup = require('shuffler-src.setupform')
-		setup.initial_setup(complete_setup)
-	else
-		print(string.format("Expected Bizhawk version %s+", MIN_BIZHAWK_VERSION))
-		print("-- Currently installed version: " .. client.getversion())
-		print("-- Please update your Bizhawk installation")
-	end
+if not(checkversion(MIN_SNES9X_VERSION)) then
+	print(string.format("Expected SNES9x-rr version %s+", MIN_SNES9X_VERSION))
+	print("-- Currently installed version: " .. getversion())
+	print("-- Please update your SNES9x-rr installation")
 end
 
 prev_input = input.get()
 frames_since_restart = 0
 
 function afterFrame() 
-
 	if emu.emulating() then
 		-- wait for a frame to pass before turning sound back on
 		--if frames_since_restart == 1 and config.sound then client.SetSoundOn(true) end
@@ -587,3 +558,5 @@ function afterFrame()
 end
 
 emu.registerafter(afterFrame)
+
+load_game(config.current_game)
