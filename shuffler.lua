@@ -29,7 +29,7 @@ MAX_INTEGER = 99999999
 PRINT_DEBUG = false
 PRINT_DEBUG_FRAME = false -- WARNING!!! VERY SPAMMY
 
-hideMessages(true);
+client.hideMessages(true);
 
 -- check if folder exists
 function path_exists(p)
@@ -299,8 +299,8 @@ function swap_game(next_game)
 	--running = false
 
 	-- mute the sound for a moment to help with the swap
-	--config.sound = client.GetSoundOn()
-	--client.SetSoundOn(false)
+	config.sound = client.sound()
+	client.sound(false)
 
 	-- force another frame to pass to get the mute to take effect
 	--if emu.getsystemid() ~= "NULL" then emu.frameadvance() end
@@ -373,7 +373,7 @@ function checkversion(reqversion)
 	if reqversion == nil then return true end
 
 	local curr, reqd = {}, {}
-	for x in string.gmatch(getVersion(), "%d+") do
+	for x in string.gmatch(client.getVersion(), "%d+") do
 		table.insert(curr, tonumber(x))
 	end
 	for x in string.gmatch(reqversion, "%d+") do
@@ -520,7 +520,7 @@ frames_since_restart = 0
 function afterFrame() 
 	if emu.emulating() then
 		-- wait for a frame to pass before turning sound back on
-		--if frames_since_restart == 1 and config.sound then client.SetSoundOn(true) end
+		if frames_since_restart == 1 and config.sound then client.sound(true) end
 
 		local frame_count = (config.frame_count or 0) + 1
 		config.frame_count = frame_count
