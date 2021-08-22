@@ -1,8 +1,12 @@
 --[[
-	Bizhawk Shuffler 2 by authorblues
+	SNES9x-rr Shuffler by Wyza
+	Adapted from Bizhawk Shuffler 2 by authorblues
 	inspired by Brossentia's Bizhawk Shuffler, based on slowbeef's original project
-	tested on Bizhawk v2.6.2 - http://tasvideos.org/BizHawk/ReleaseHistory.html
+	Requires SNES9x-rr with loadrom support (see this repo until I can get it PRed): 
 	released under MIT License
+
+
+	PS - still a work in progress. still need to strip out the rest of the bizhawk code.
 --]]
 
 config = {}
@@ -20,9 +24,11 @@ STATES_FOLDER = GAMES_FOLDER .. '/.savestates'
 STATES_BACKUPS = 3
 DEFAULT_CMD_OUTPUT = 'shuffler-src/.cmd-output.txt'
 
-MIN_BIZHAWK_VERSION = "2.6.1"
+MIN_BIZHAWK_VERSION = "0"
 RECOMMENDED_LUA_CORE = "LuaInterface"
 MAX_INTEGER = 99999999
+PRINT_DEBUG = false
+PRINT_DEBUG_FRAME = false -- WARNING!!! VERY SPAMMY
 
 -- check if folder exists
 function path_exists(p)
@@ -47,6 +53,19 @@ function load_config(f)
 	local fn = loadfile(f)
 	if fn ~= nil then fn() end
 	return fn ~= nil
+end
+
+function debug(...)
+	if(PRINT_DEBUG) then
+		print(...)
+	end
+	
+end
+
+function debugFrame(...)
+	if(PRINT_DEBUG_FRAME) then
+		print(...)
+	end
 end
 
 -- dump lua object
@@ -128,6 +147,7 @@ function get_games_list(force)
 	local LIST_FILE = '.games-list.txt'
 	local games = get_dir_contents(GAMES_FOLDER, GAMES_FOLDER .. '/' .. LIST_FILE, force or false)
 	local toremove = {}
+	debug(games)
 
 	-- find .cue files and remove the associated bin/iso
 	for _,filename in ipairs(games) do
@@ -173,10 +193,12 @@ end
 function get_savestate_file(game)
 	game = game or config.current_game
 	if game == nil then error('no game specified for savestate file') end
-	return string.format("%s/%s.state", STATES_FOLDER, game)
+	return 1
+	--return string.format("%s/%s.state", STATES_FOLDER, game)
 end
 
 function save_current_game()
+	debug('save_current_game')
 	local function overwrite(a, b)
 		os.remove(b)
 		os.rename(a, b)
@@ -190,7 +212,7 @@ function save_current_game()
 				string.format("%s.bk%d", statename, i))
 		end
 		overwrite(statename, statename .. '.bk1')
-		savestate.save(statename)
+		savestate.save(0)
 	end
 end
 
@@ -209,7 +231,7 @@ end
 function load_game(g)
 	local filename = GAMES_FOLDER .. '/' .. g
 	if not file_exists(filename) then return false end
-	client.openrom(filename)
+	emu.loadrom(filename)
 	return true
 end
 
@@ -245,11 +267,16 @@ end
 
 -- save current game's savestate, backup config, and load new game
 function swap_game(next_game)
+	debug('swap_game')
 	-- if a swap has already happened, don't call again
 	if not running then return false end
 
+	debug('running')
+
 	-- if no game provided, call get_next_game()
 	next_game = next_game or get_next_game()
+
+	debug(next_game)
 
 	-- if the game isn't changing, stop here and just update the timer
 	-- (you might think we should just disable the timer at this point, but this
@@ -272,14 +299,14 @@ function swap_game(next_game)
 	-- at this point, save the game and update the new "current" game after
 	save_current_game()
 	config.current_game = next_game
-	running = false
+	--running = false
 
 	-- mute the sound for a moment to help with the swap
-	config.sound = client.GetSoundOn()
-	client.SetSoundOn(false)
+	--config.sound = client.GetSoundOn()
+	--client.SetSoundOn(false)
 
 	-- force another frame to pass to get the mute to take effect
-	if emu.getsystemid() ~= "NULL" then emu.frameadvance() end
+	--if emu.getsystemid() ~= "NULL" then emu.frameadvance() end
 
 	-- unique game count, for debug purposes
 	config.game_count = 0
@@ -291,8 +318,32 @@ function swap_game(next_game)
 	config.nseed = math.random(MAX_INTEGER) + config.frame_count
 	save_config(config, 'shuffler-src/config.lua')
 
-	-- load the new game WHICH IS JUST GOING TO RESTART THE WHOLE SCRIPT f***
-	return load_game(config.current_game)
+	-- load the new game 
+	load_game(config.current_game)
+	savestate.load(0)
+
+	-- update swap counter for this game
+	local new_swaps = (config.game_swaps[config.current_game] or 0) + 1
+	config.game_swaps[config.current_game] = new_swaps
+	write_data('output-info/current-swaps.txt', new_swaps)
+
+	-- update total swap counter
+	config.total_swaps = (config.total_swaps or 0) + 1
+	write_data('output-info/total-swaps.txt', config.total_swaps)
+
+	-- update game name
+	write_data('output-info/current-game.txt', strip_ext(config.current_game))
+
+	math.randomseed(config.nseed or config.seed)
+	update_next_swap_time()
+
+	for _,plugin in ipairs(plugins) do
+		if plugin.on_game_load ~= nil then
+			local pdata = config.plugins[plugin._module]
+			plugin.on_game_load(pdata.state, pdata.settings)
+		end
+	end
+
 end
 
 function swap_game_delay(f)
@@ -320,11 +371,12 @@ function strip_ext(filename)
 end
 
 function checkversion(reqversion)
+	
 	-- nil string means no requirements, so of course true
 	if reqversion == nil then return true end
 
 	local curr, reqd = {}, {}
-	for x in string.gmatch(client.getversion(), "%d+") do
+	for x in string.gmatch("0", "%d+") do
 		table.insert(curr, tonumber(x))
 	end
 	for x in string.gmatch(reqversion, "%d+") do
@@ -340,13 +392,13 @@ function checkversion(reqversion)
 	return true
 end
 
-local function check_lua_core()
-	if client.get_lua_engine() ~= RECOMMENDED_LUA_CORE then
-		print(string.format("\n[!] It is recommended to use the %s core (currently using %s)\n" ..
-			"Change the Lua core in the Config > Customize > Advanced menu and restart BizHawk",
-			RECOMMENDED_LUA_CORE, client.get_lua_engine()))
-	end
-end
+-- local function check_lua_core()
+-- 	if client.get_lua_engine() ~= RECOMMENDED_LUA_CORE then
+-- 		print(string.format("\n[!] It is recommended to use the %s core (currently using %s)\n" ..
+-- 			"Change the Lua core in the Config > Customize > Advanced menu and restart BizHawk",
+-- 			RECOMMENDED_LUA_CORE, client.get_lua_engine()))
+-- 	end
+-- end
 
 -- this is going to be an APPROXIMATION and is not a substitute for an actual
 -- timer. games do not run at a consistent or exact 60 fps, so this method is
@@ -436,7 +488,7 @@ function complete_setup()
 	math.randomseed(config.nseed or config.seed)
 
 	if config.frame_count == 0 then
-		print('deleting savestates!')
+		debug('deleting savestates!')
 		delete_savestates()
 	end
 
@@ -450,12 +502,14 @@ function complete_setup()
 	else swap_game() end
 end
 
-check_lua_core()
+--check_lua_core()
 
 -- load primary configuration
 load_config('shuffler-src/config.lua')
 
-if emu.getsystemid() ~= "NULL" then
+-- if emu.getsystemid() ~= "NULL" then
+if true then
+	print('script init')
 	-- THIS CODE RUNS EVERY TIME THE SCRIPT RESTARTS
 	-- which is specifically after a call to client.openrom()
 
@@ -471,39 +525,13 @@ if emu.getsystemid() ~= "NULL" then
 		end
 	end
 
-	local state = get_savestate_file()
-	if file_exists(state) then savestate.load(state) end
+	--local state = get_savestate_file()
+	--if file_exists(state) then savestate.load(state) end
 
-	-- update swap counter for this game
-	local new_swaps = (config.game_swaps[config.current_game] or 0) + 1
-	config.game_swaps[config.current_game] = new_swaps
-	write_data('output-info/current-swaps.txt', new_swaps)
-
-	-- update total swap counter
-	config.total_swaps = (config.total_swaps or 0) + 1
-	write_data('output-info/total-swaps.txt', config.total_swaps)
-
-	-- update game name
-	write_data('output-info/current-game.txt', strip_ext(config.current_game))
-
-	-- this code just outright crashes on Bizhawk 2.6.1, go figure
-	if checkversion("2.6.2") then
-		gui.use_surface('client')
-		gui.clearGraphics()
-	end
-
-	math.randomseed(config.nseed or config.seed)
-	update_next_swap_time()
-
-	for _,plugin in ipairs(plugins) do
-		if plugin.on_game_load ~= nil then
-			local pdata = config.plugins[plugin._module]
-			plugin.on_game_load(pdata.state, pdata.settings)
-		end
-	end
+	
 else
 	-- THIS CODE RUNS ONLY ON THE INITIAL SCRIPT SETUP
-	client.displaymessages(false)
+	--client.displaymessages(false)
 	if checkversion(MIN_BIZHAWK_VERSION) then
 		local setup = require('shuffler-src.setupform')
 		setup.initial_setup(complete_setup)
@@ -516,10 +544,12 @@ end
 
 prev_input = input.get()
 frames_since_restart = 0
-while true do
-	if emu.getsystemid() ~= "NULL" and running then
+
+function afterFrame() 
+
+	if emu.emulating() then
 		-- wait for a frame to pass before turning sound back on
-		if frames_since_restart == 1 and config.sound then client.SetSoundOn(true) end
+		--if frames_since_restart == 1 and config.sound then client.SetSoundOn(true) end
 
 		local frame_count = (config.frame_count or 0) + 1
 		config.frame_count = frame_count
@@ -554,6 +584,6 @@ while true do
 		-- time to swap!
 	    if frame_count >= next_swap_time then swap_game() end
 	end
-
-	emu.frameadvance()
 end
+
+emu.registerafter(afterFrame)
