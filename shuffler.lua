@@ -13,7 +13,7 @@ config = {}
 next_swap_time = 0
 running = true
 plugins = {}
-
+local memoryWrapper = require('./shuffler-src/memory-wrapper')
 -- determine operating system for the purpose of commands
 _PLATFORMS = {['dll'] = 'WIN', ['so'] = 'LINUX', ['dylib'] = 'MAC'}
 PLATFORM = _PLATFORMS[package.cpath:match("%p[\\|/]?%p(%a+)")]
@@ -504,6 +504,7 @@ if config.plugins ~= nil then
 	for pmodpath,pdata in pairs(config.plugins) do
 		local pmodule = require(PLUGINS_FOLDER .. '.' .. pmodpath)
 		pmodule._module = pmodpath
+		pmodule.memory = memoryWrapper
 		if pmodule ~= nil then table.insert(plugins, pmodule) end
 	end
 end
