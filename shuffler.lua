@@ -14,6 +14,7 @@ next_swap_time = 0
 running = true
 plugins = {}
 local memoryWrapper = require('./shuffler-src/memory-wrapper')
+
 -- determine operating system for the purpose of commands
 _PLATFORMS = {['dll'] = 'WIN', ['so'] = 'LINUX', ['dylib'] = 'MAC'}
 PLATFORM = _PLATFORMS[package.cpath:match("%p[\\|/]?%p(%a+)")]
@@ -498,6 +499,18 @@ end
 
 -- load primary configuration
 load_config('shuffler-src/config.lua')
+local games = get_games_list(true) -- force refresh of the games list
+if #games == 0 then
+	local sep = '/'
+	if PLATFORM == 'WIN' then sep = '\\' end
+
+	print('No games found in the expected directory. Were they put somewhere else? ' ..
+		'Are they nested inside folders? ROM files should be placed directly in the following directory:')
+	if cwd ~= nil then print(string.format("Expected: %s%s%s", cwd(), sep, GAMES_FOLDER)) end
+	return
+end
+
+save_config(config, 'shuffler-src/config.lua')
 
 -- load plugin configuration
 if config.plugins ~= nil then
